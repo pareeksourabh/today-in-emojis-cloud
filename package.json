@@ -1,0 +1,40 @@
+{
+  "name": "today-in-emojis-cloud",
+  "version": "1.0.0",
+  "description": "Cloud producer for Today in Emojis - generates editions and stores in GCP",
+  "main": "src/cloud/cli/produce.ts",
+  "scripts": {
+    "cloud:produce": "tsx src/cloud/cli/produce.ts",
+    "cloud:health": "tsx src/cloud/cli/produce.ts --health-check",
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pareeksourabh/today-in-emojis-cloud.git"
+  },
+  "keywords": [
+    "emoji",
+    "news",
+    "cloud",
+    "gcp",
+    "firestore",
+    "cloud-storage"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/pareeksourabh/today-in-emojis-cloud/issues"
+  },
+  "homepage": "https://github.com/pareeksourabh/today-in-emojis-cloud#readme",
+  "dependencies": {
+    "@google-cloud/storage": "^7.18.0",
+    "@google-cloud/firestore": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.8.1",
+    "typescript": "5.9.3",
+    "tsx": "^4.19.0"
+  }
+}
