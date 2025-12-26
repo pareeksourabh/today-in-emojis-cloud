@@ -53,9 +53,9 @@ RUN mkdir -p public/data
 ENV NODE_ENV=production
 ENV PYTHONUNBUFFERED=1
 
-# Default to auto mode (determines type from cadence)
-# Can be overridden by setting POST_TYPE=normal or POST_TYPE=essence
-ENV POST_TYPE=auto
+# Default to normal mode
+# Must be overridden by Cloud Scheduler to POST_TYPE=essence for essence jobs
+ENV POST_TYPE=normal
 
 # Default command - reads POST_TYPE from environment
 CMD ["sh", "-c", "python3 scripts/cloud_produce.py --type=${POST_TYPE}"]

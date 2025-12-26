@@ -167,17 +167,24 @@ def send_to_cloud(data, image_path, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Cloud producer for Today in Emojis")
-    parser.add_argument("--type", choices=["normal", "essence", "auto"], default="auto",
-                      help="Post type (auto determines based on cadence)")
+    parser.add_argument("--type", choices=["normal", "essence"], default="normal",
+                      help="Post type (normal or essence)")
     parser.add_argument("--dry-run", action="store_true",
                       help="Dry-run mode (no cloud writes)")
     args = parser.parse_args()
 
     try:
-        # Step 1: Run AI emoji selection
-        run_emoji_selection()
+        # Set POST_TYPE environment variable for prepare_daily_post.py
+        os.environ["POST_TYPE"] = args.type
+        print(f"[info] POST_TYPE={args.type}")
 
-        # Step 2: Prepare post (determines if essence or normal)
+        # Step 1: Run AI emoji selection (only for normal posts)
+        if args.type == "normal":
+            run_emoji_selection()
+        else:
+            print("[info] Skipping AI emoji selection for essence post")
+
+        # Step 2: Prepare post
         run_prepare_post()
 
         # Step 3: Load the prepared data
