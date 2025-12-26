@@ -23,6 +23,8 @@ import json
 import subprocess
 import tempfile
 import argparse
+import urllib.request
+import base64
 from datetime import date, datetime
 
 # Configuration
@@ -54,6 +56,177 @@ ESSENCE_TEXT_COLOR = (70, 70, 70)
 ESSENCE_EMOJI_FONT_SIZE = 420  # Increased from 320 to 420
 ESSENCE_DATE_FONT_SIZE = 36
 ESSENCE_DATE_TOP_PADDING = 70
+
+# Twemoji configuration (env vars)
+TWEMOJI_BASE_URL = os.getenv(
+    'TWEMOJI_BASE_URL',
+    'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg'
+)
+TWEMOJI_CACHE_DIR = os.getenv('TWEMOJI_CACHE_DIR', '/tmp/twemoji-cache')
+TWEMOJI_OFFLINE = os.getenv('TWEMOJI_OFFLINE', '0') == '1'
+
+
+def emoji_to_twemoji_codepoints(emoji_char):
+    """
+    Convert an emoji character to Twemoji filename format.
+
+    Examples:
+        🌍 → "1f30d"
+        🇺🇸 → "1f1fa-1f1f8"
+        👨‍👩‍👧 → "1f468-200d-1f469-200d-1f467"
+
+    Args:
+        emoji_char: Single emoji character (may be multi-codepoint)
+
+    Returns:
+        Lowercase hex string with hyphens (e.g., "1f30d")
+    """
+    # Get codepoints for the emoji
+    codepoints = []
+    for char in emoji_char:
+        cp = ord(char)
+        # Skip variation selectors (U+FE0F, U+FE0E)
+        if cp == 0xFE0F or cp == 0xFE0E:
+            continue
+        codepoints.append(f'{cp:x}')
+
+    return '-'.join(codepoints)
+
+
+def get_twemoji_svg(emoji_char):
+    """
+    Get Twemoji SVG content for an emoji, using cache or downloading.
+
+    Args:
+        emoji_char: Single emoji character
+
+    Returns:
+        SVG content as string, or None if failed
+    """
+    # Get codepoint filename
+    codepoints = emoji_to_twemoji_codepoints(emoji_char)
+    cache_path = os.path.join(TWEMOJI_CACHE_DIR, f'{codepoints}.svg')
+
+    # Check cache first
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            print(f"[warn] Failed to read cached Twemoji SVG: {e}", file=sys.stderr)
+
+    # If offline mode, fail gracefully
+    if TWEMOJI_OFFLINE:
+        print(f"[info] Twemoji offline mode - skipping download for {emoji_char}", file=sys.stderr)
+        return None
+
+    # Download from CDN
+    url = f'{TWEMOJI_BASE_URL}/{codepoints}.svg'
+    try:
+        print(f"[info] Downloading Twemoji: {url}", file=sys.stderr)
+        with urllib.request.urlopen(url, timeout=5) as response:
+            svg_content = response.read().decode('utf-8')
+
+        # Cache it
+        os.makedirs(TWEMOJI_CACHE_DIR, exist_ok=True)
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            f.write(svg_content)
+
+        return svg_content
+
+    except Exception as e:
+        print(f"[warn] Failed to download Twemoji for {emoji_char} ({codepoints}): {e}", file=sys.stderr)
+        return None
+
+
+def get_font_css():
+    """
+    Generate CSS for fonts, preferring local Inter fonts over Google Fonts.
+
+    Returns:
+        CSS string for @font-face or @import
+    """
+    # Get script directory to find assets/fonts relative to script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(script_dir)  # Go up one level from scripts/
+    fonts_dir = os.path.join(repo_root, 'assets', 'fonts')
+
+    inter_regular = os.path.join(fonts_dir, 'Inter-Regular.ttf')
+    inter_medium = os.path.join(fonts_dir, 'Inter-Medium.ttf')
+
+    if os.path.exists(inter_regular) and os.path.exists(inter_medium):
+        print("[info] Using local Inter fonts", file=sys.stderr)
+        return f'''
+        @font-face {{
+            font-family: 'Inter';
+            src: url('file://{inter_regular}');
+            font-weight: 400;
+            font-style: normal;
+        }}
+        @font-face {{
+            font-family: 'Inter';
+            src: url('file://{inter_medium}');
+            font-weight: 500;
+            font-style: normal;
+        }}
+        '''
+    else:
+        print("[info] Local fonts not found, using Google Fonts", file=sys.stderr)
+        return "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');"
+
+
+def render_emoji_html(emoji_char, size_px, with_halo=False, scale=1):
+    """
+    Render an emoji as HTML using Twemoji SVG or font fallback.
+
+    Args:
+        emoji_char: Single emoji character
+        size_px: Font size in pixels (for fallback or SVG sizing)
+        with_halo: Whether to wrap in circular halo (for normal mode)
+        scale: Rendering scale factor (e.g., 2 for 2x)
+
+    Returns:
+        HTML string for the emoji
+    """
+    svg_content = get_twemoji_svg(emoji_char)
+
+    if svg_content:
+        # Use Twemoji SVG - inline for best quality
+        # Extract viewBox to maintain aspect ratio
+        svg_content = svg_content.replace('<svg ', f'<svg width="{size_px}px" height="{size_px}px" ')
+
+        if with_halo:
+            halo_padding = 15 * scale
+            halo_bg = 'rgba(0, 0, 0, 0.02)'
+            halo_border = '1px solid rgba(0, 0, 0, 0.04)'
+            return f'''<div class="emoji-container" style="
+                background: {halo_bg};
+                border: {halo_border};
+                border-radius: 50%;
+                padding: {halo_padding}px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            ">{svg_content}</div>'''
+        else:
+            return f'<div class="emoji-svg-wrapper">{svg_content}</div>'
+    else:
+        # Fallback to font emoji
+        if with_halo:
+            halo_padding = 15 * scale
+            halo_bg = 'rgba(0, 0, 0, 0.02)'
+            halo_border = '1px solid rgba(0, 0, 0, 0.04)'
+            return f'''<div class="emoji-container" style="
+                background: {halo_bg};
+                border: {halo_border};
+                border-radius: 50%;
+                padding: {halo_padding}px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            "><span class="emoji">{emoji_char}</span></div>'''
+        else:
+            return f'<span class="emoji">{emoji_char}</span>'
 
 
 def load_emoji_data(path=INPUT_FILE):
@@ -385,7 +558,7 @@ def compute_date_left(num_emojis):
     return max(PADDING_OUTER, estimated_left)
 
 
-def generate_with_playwright(emoji_chars, date_str, output_path):
+def generate_with_playwright(emoji_chars, date_str, output_path, debug_html=False):
     """Generate image using Playwright for reliable headless browser rendering with enhanced quality."""
 
     emoji_text = " ".join(emoji_chars)
@@ -393,27 +566,23 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
 
     # Scale everything by 2 for high-DPI rendering
     scale = RENDER_SIZE / SIZE
-    card_x = PADDING_OUTER * scale
-    card_y = PADDING_OUTER * scale
-    date_left_in_card = compute_date_left(len(emoji_chars)) * scale - card_x
-    date_left_in_card = max(0, date_left_in_card)
 
-    # Convert colors to hex
-    bg_hex = '#{:02x}{:02x}{:02x}'.format(*BG_COLOR)
-    bg_hex_end = '#{:02x}{:02x}{:02x}'.format(*BG_COLOR_END)
-    card_hex = '#{:02x}{:02x}{:02x}'.format(*CARD_COLOR)
-    border_hex = '#{:02x}{:02x}{:02x}'.format(*BORDER_COLOR)
+    # Text color
     text_hex = '#{:02x}{:02x}{:02x}'.format(*TEXT_COLOR)
 
-    # Wrap each emoji in a span
-    emoji_spans = ''.join([f'<span class="emoji">{e}</span>' for e in emoji_chars])
+    # Render each emoji with Twemoji and circular halo
+    emoji_htmls = [render_emoji_html(e, EMOJI_FONT_SIZE * scale, with_halo=True, scale=scale) for e in emoji_chars]
+    emoji_spans = ''.join(emoji_htmls)
+
+    # Get font CSS (local or Google Fonts)
+    font_css = get_font_css()
 
     html_content = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+        {font_css}
 
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         html, body {{
@@ -422,31 +591,20 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
             overflow: hidden;
         }}
         body {{
-            background: linear-gradient(135deg, {bg_hex} 0%, {bg_hex_end} 100%);
+            background: #ffffff;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
-        }}
-        .card {{
-            width: {RENDER_SIZE - 2*PADDING_OUTER*scale}px;
-            height: {RENDER_SIZE - 2*PADDING_OUTER*scale}px;
-            background: {card_hex};
-            border: {CARD_BORDER_WIDTH*scale}px solid {border_hex};
-            border-radius: {CARD_RADIUS*scale}px;
+            box-shadow: inset 0 0 {40*scale}px rgba(0, 0, 0, 0.03);
             position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            box-shadow: 0 {10*scale}px {40*scale}px rgba(0, 0, 0, 0.08),
-                        0 {4*scale}px {16*scale}px rgba(0, 0, 0, 0.04);
         }}
         .date {{
             position: absolute;
-            top: {30*scale}px;
-            left: {date_left_in_card}px;
+            top: {80*scale}px;
             font-size: {DATE_FONT_SIZE*scale}px;
             color: {text_hex};
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -468,29 +626,30 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
             vertical-align: middle;
             font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Twemoji Mozilla', sans-serif;
             filter: drop-shadow(0 {2*scale}px {8*scale}px rgba(0, 0, 0, 0.1));
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
+        }}
+        .emoji-container svg,
+        .emoji-svg-wrapper svg {{
+            display: block;
+            image-rendering: auto;
+            filter: drop-shadow(0 {2*scale}px {8*scale}px rgba(0, 0, 0, 0.1));
         }}
     </style>
 </head>
 <body>
-    <div class="card">
-        <div class="date">{formatted_date}</div>
-        <div class="emojis">{emoji_spans}</div>
-    </div>
+    <div class="date">{formatted_date}</div>
+    <div class="emojis">{emoji_spans}</div>
 </body>
-<script>
-    const card = document.querySelector('.card');
-    const date = document.querySelector('.date');
-    const emojis = document.querySelector('.emojis');
-    if (card && date && emojis) {{
-        const cardRect = card.getBoundingClientRect();
-        const emojiRect = emojis.getBoundingClientRect();
-        const relativeLeft = emojiRect.left - cardRect.left;
-        date.style.left = `${{relativeLeft}}px`;
-    }}
-</script>
 </html>'''
+
+    # Debug HTML output if requested
+    if debug_html:
+        debug_path = output_path.replace('.png', '.debug.html') if output_path.endswith('.png') else f'{output_path}.debug.html'
+        try:
+            with open(debug_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            print(f"[info] Debug HTML written to: {debug_path}", file=sys.stderr)
+        except Exception as e:
+            print(f"[warn] Failed to write debug HTML: {e}", file=sys.stderr)
 
     try:
         from playwright.sync_api import sync_playwright
@@ -502,7 +661,14 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
                 device_scale_factor=1
             )
             page.set_content(html_content)
-            page.wait_for_timeout(200)  # Increased wait time for font loading
+
+            # Wait for fonts to load with robust check
+            try:
+                page.wait_for_function("document.fonts.status === 'loaded'", timeout=2000)
+            except:
+                # Fallback to timeout if fonts API not available
+                page.wait_for_timeout(500)
+
             page.screenshot(path=output_path, full_page=False)
             browser.close()
 
@@ -524,7 +690,7 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
         return False
 
 
-def generate_essence_with_playwright(emoji_char, date_str, output_path):
+def generate_essence_with_playwright(emoji_char, date_str, output_path, debug_html=False):
     """Generate essence image using Playwright for reliable headless browser rendering with enhanced quality."""
 
     formatted_date = format_date(date_str)
@@ -532,16 +698,20 @@ def generate_essence_with_playwright(emoji_char, date_str, output_path):
     # Scale everything by 2 for high-DPI rendering
     scale = RENDER_SIZE / SIZE
 
-    bg_hex = '#{:02x}{:02x}{:02x}'.format(*ESSENCE_BG_COLOR)
-    bg_hex_end = '#{:02x}{:02x}{:02x}'.format(*ESSENCE_BG_COLOR_END)
     text_hex = '#{:02x}{:02x}{:02x}'.format(*ESSENCE_TEXT_COLOR)
+
+    # Render emoji with Twemoji (no halo for essence mode)
+    emoji_html = render_emoji_html(emoji_char, ESSENCE_EMOJI_FONT_SIZE * scale, with_halo=False, scale=scale)
+
+    # Get font CSS (local or Google Fonts)
+    font_css = get_font_css()
 
     html_content = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+        {font_css}
 
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         html, body {{
@@ -550,7 +720,7 @@ def generate_essence_with_playwright(emoji_char, date_str, output_path):
             overflow: hidden;
         }}
         body {{
-            background: linear-gradient(135deg, {bg_hex} 0%, {bg_hex_end} 100%);
+            background: #ffffff;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -558,14 +728,18 @@ def generate_essence_with_playwright(emoji_char, date_str, output_path):
             position: relative;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            box-shadow: inset 0 0 {40*scale}px rgba(0, 0, 0, 0.03);
         }}
         .emoji {{
             font-size: {ESSENCE_EMOJI_FONT_SIZE * scale}px;
             line-height: 1;
             font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
             filter: drop-shadow(0 {4*scale}px {20*scale}px rgba(0, 0, 0, 0.12));
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
+        }}
+        .emoji-svg-wrapper svg {{
+            display: block;
+            image-rendering: auto;
+            filter: drop-shadow(0 {4*scale}px {20*scale}px rgba(0, 0, 0, 0.12));
         }}
         .date {{
             position: absolute;
@@ -580,10 +754,20 @@ def generate_essence_with_playwright(emoji_char, date_str, output_path):
     </style>
 </head>
 <body>
-    <div class="emoji">{emoji_char}</div>
+    {emoji_html}
     <div class="date">{formatted_date}</div>
 </body>
 </html>'''
+
+    # Debug HTML output if requested
+    if debug_html:
+        debug_path = output_path.replace('.png', '.debug.html') if output_path.endswith('.png') else f'{output_path}.debug.html'
+        try:
+            with open(debug_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            print(f"[info] Debug HTML written to: {debug_path}", file=sys.stderr)
+        except Exception as e:
+            print(f"[warn] Failed to write debug HTML: {e}", file=sys.stderr)
 
     try:
         from playwright.sync_api import sync_playwright
@@ -595,7 +779,14 @@ def generate_essence_with_playwright(emoji_char, date_str, output_path):
                 device_scale_factor=1
             )
             page.set_content(html_content)
-            page.wait_for_timeout(200)  # Increased wait time for font loading
+
+            # Wait for fonts to load with robust check
+            try:
+                page.wait_for_function("document.fonts.status === 'loaded'", timeout=2000)
+            except:
+                # Fallback to timeout if fonts API not available
+                page.wait_for_timeout(500)
+
             page.screenshot(path=output_path, full_page=False)
             browser.close()
 
@@ -740,6 +931,8 @@ def main():
                        help='Custom input JSON path')
     parser.add_argument('--output', type=str,
                        help='Custom output path')
+    parser.add_argument('--debug-html', action='store_true',
+                       help='Write debug HTML file alongside output')
     args = parser.parse_args()
 
     # Load data
@@ -808,9 +1001,9 @@ def main():
     if not success:
         print("[info] Trying Playwright rendering...")
         if post_type == 'essence':
-            success = generate_essence_with_playwright(essence_emoji, date_str, output_path)
+            success = generate_essence_with_playwright(essence_emoji, date_str, output_path, debug_html=args.debug_html)
         else:
-            success = generate_with_playwright(emoji_chars, date_str, output_path)
+            success = generate_with_playwright(emoji_chars, date_str, output_path, debug_html=args.debug_html)
         if success:
             print("[success] Generated with Playwright")
 
