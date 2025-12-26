@@ -29,9 +29,11 @@ from datetime import date, datetime
 INPUT_FILE = "public/data/today.json"
 OUTPUT_DIR = "public/images/daily"
 SIZE = 1080
+RENDER_SIZE = 2160  # Render at 2x for better quality, then scale down
 
-# Design constants
+# Design constants - Enhanced for better visual quality
 BG_COLOR = (245, 243, 238)      # Outer background (#F5F3EE)
+BG_COLOR_END = (240, 237, 230)  # Gradient end color
 CARD_COLOR = (255, 255, 255)    # Inner card (white)
 BORDER_COLOR = (220, 216, 208)  # Subtle border
 TEXT_COLOR = (60, 60, 60)       # Date text color
@@ -40,15 +42,16 @@ PADDING_OUTER = 80              # Margin from canvas edge to card
 CARD_RADIUS = 60                # Rounded corners
 CARD_BORDER_WIDTH = 2           # Border thickness
 
-# Font config
+# Font config - Enhanced for better readability
 DATE_FONT_SIZE = 40
-EMOJI_FONT_SIZE = 108  # 60% of 180
-EMOJI_GAP = 20
+EMOJI_FONT_SIZE = 150  # Increased from 108 to 150 (40% larger)
+EMOJI_GAP = 35         # Increased from 20 to 35 for better spacing
 
-# Essence design constants
+# Essence design constants - Enhanced
 ESSENCE_BG_COLOR = (242, 241, 236)
+ESSENCE_BG_COLOR_END = (237, 236, 228)
 ESSENCE_TEXT_COLOR = (70, 70, 70)
-ESSENCE_EMOJI_FONT_SIZE = 320
+ESSENCE_EMOJI_FONT_SIZE = 420  # Increased from 320 to 420
 ESSENCE_DATE_FONT_SIZE = 36
 ESSENCE_DATE_TOP_PADDING = 70
 
@@ -383,17 +386,21 @@ def compute_date_left(num_emojis):
 
 
 def generate_with_playwright(emoji_chars, date_str, output_path):
-    """Generate image using Playwright for reliable headless browser rendering."""
+    """Generate image using Playwright for reliable headless browser rendering with enhanced quality."""
 
     emoji_text = " ".join(emoji_chars)
     formatted_date = format_date(date_str)
-    card_x = PADDING_OUTER
-    card_y = PADDING_OUTER
-    date_left_in_card = compute_date_left(len(emoji_chars)) - card_x
+
+    # Scale everything by 2 for high-DPI rendering
+    scale = RENDER_SIZE / SIZE
+    card_x = PADDING_OUTER * scale
+    card_y = PADDING_OUTER * scale
+    date_left_in_card = compute_date_left(len(emoji_chars)) * scale - card_x
     date_left_in_card = max(0, date_left_in_card)
 
     # Convert colors to hex
     bg_hex = '#{:02x}{:02x}{:02x}'.format(*BG_COLOR)
+    bg_hex_end = '#{:02x}{:02x}{:02x}'.format(*BG_COLOR_END)
     card_hex = '#{:02x}{:02x}{:02x}'.format(*CARD_COLOR)
     border_hex = '#{:02x}{:02x}{:02x}'.format(*BORDER_COLOR)
     text_hex = '#{:02x}{:02x}{:02x}'.format(*TEXT_COLOR)
@@ -406,37 +413,45 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
 <head>
     <meta charset="UTF-8">
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         html, body {{
-            width: {SIZE}px;
-            height: {SIZE}px;
+            width: {RENDER_SIZE}px;
+            height: {RENDER_SIZE}px;
             overflow: hidden;
         }}
         body {{
-            background: {bg_hex};
+            background: linear-gradient(135deg, {bg_hex} 0%, {bg_hex_end} 100%);
             display: flex;
             justify-content: center;
             align-items: center;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }}
         .card {{
-            width: {SIZE - 2*PADDING_OUTER}px;
-            height: {SIZE - 2*PADDING_OUTER}px;
+            width: {RENDER_SIZE - 2*PADDING_OUTER*scale}px;
+            height: {RENDER_SIZE - 2*PADDING_OUTER*scale}px;
             background: {card_hex};
-            border: {CARD_BORDER_WIDTH}px solid {border_hex};
-            border-radius: {CARD_RADIUS}px;
+            border: {CARD_BORDER_WIDTH*scale}px solid {border_hex};
+            border-radius: {CARD_RADIUS*scale}px;
             position: relative;
             display: flex;
             justify-content: center;
             align-items: center;
+            box-shadow: 0 {10*scale}px {40*scale}px rgba(0, 0, 0, 0.08),
+                        0 {4*scale}px {16*scale}px rgba(0, 0, 0, 0.04);
         }}
         .date {{
             position: absolute;
-            top: 30px;
+            top: {30*scale}px;
             left: {date_left_in_card}px;
-            font-size: {DATE_FONT_SIZE}px;
+            font-size: {DATE_FONT_SIZE*scale}px;
             color: {text_hex};
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-weight: 500;
+            letter-spacing: 0.5px;
         }}
         .emojis {{
             display: flex;
@@ -444,14 +459,17 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
             flex-wrap: nowrap;
             align-items: center;
             justify-content: center;
-            gap: {EMOJI_GAP}px;
+            gap: {EMOJI_GAP*scale}px;
         }}
         .emoji {{
-            font-size: {EMOJI_FONT_SIZE}px;
+            font-size: {EMOJI_FONT_SIZE*scale}px;
             line-height: 1;
             display: inline-block;
             vertical-align: middle;
-            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Twemoji Mozilla', sans-serif;
+            filter: drop-shadow(0 {2*scale}px {8*scale}px rgba(0, 0, 0, 0.1));
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
         }}
     </style>
 </head>
@@ -479,11 +497,20 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
 
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            page = browser.new_page(viewport={'width': SIZE, 'height': SIZE})
+            page = browser.new_page(
+                viewport={'width': RENDER_SIZE, 'height': RENDER_SIZE},
+                device_scale_factor=1
+            )
             page.set_content(html_content)
-            page.wait_for_timeout(100)
+            page.wait_for_timeout(200)  # Increased wait time for font loading
             page.screenshot(path=output_path, full_page=False)
             browser.close()
+
+        # Scale down from 2160 to 1080 for final output with high quality
+        from PIL import Image
+        img = Image.open(output_path)
+        img_resized = img.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
+        img_resized.save(output_path, 'PNG', optimize=True, quality=95)
 
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
             return True
@@ -498,11 +525,15 @@ def generate_with_playwright(emoji_chars, date_str, output_path):
 
 
 def generate_essence_with_playwright(emoji_char, date_str, output_path):
-    """Generate essence image using Playwright for reliable headless browser rendering."""
+    """Generate essence image using Playwright for reliable headless browser rendering with enhanced quality."""
 
     formatted_date = format_date(date_str)
 
+    # Scale everything by 2 for high-DPI rendering
+    scale = RENDER_SIZE / SIZE
+
     bg_hex = '#{:02x}{:02x}{:02x}'.format(*ESSENCE_BG_COLOR)
+    bg_hex_end = '#{:02x}{:02x}{:02x}'.format(*ESSENCE_BG_COLOR_END)
     text_hex = '#{:02x}{:02x}{:02x}'.format(*ESSENCE_TEXT_COLOR)
 
     html_content = f'''<!DOCTYPE html>
@@ -510,32 +541,41 @@ def generate_essence_with_playwright(emoji_char, date_str, output_path):
 <head>
     <meta charset="UTF-8">
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         html, body {{
-            width: {SIZE}px;
-            height: {SIZE}px;
+            width: {RENDER_SIZE}px;
+            height: {RENDER_SIZE}px;
             overflow: hidden;
         }}
         body {{
-            background: {bg_hex};
+            background: linear-gradient(135deg, {bg_hex} 0%, {bg_hex_end} 100%);
             display: flex;
             justify-content: center;
             align-items: center;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             position: relative;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }}
         .emoji {{
-            font-size: {ESSENCE_EMOJI_FONT_SIZE}px;
+            font-size: {ESSENCE_EMOJI_FONT_SIZE * scale}px;
             line-height: 1;
             font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+            filter: drop-shadow(0 {4*scale}px {20*scale}px rgba(0, 0, 0, 0.12));
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
         }}
         .date {{
             position: absolute;
-            top: {ESSENCE_DATE_TOP_PADDING}px;
+            top: {ESSENCE_DATE_TOP_PADDING * scale}px;
             left: 50%;
             transform: translateX(-50%);
-            font-size: {ESSENCE_DATE_FONT_SIZE}px;
+            font-size: {ESSENCE_DATE_FONT_SIZE * scale}px;
+            font-weight: 500;
             color: {text_hex};
+            letter-spacing: 0.02em;
         }}
     </style>
 </head>
@@ -550,11 +590,20 @@ def generate_essence_with_playwright(emoji_char, date_str, output_path):
 
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            page = browser.new_page(viewport={'width': SIZE, 'height': SIZE})
+            page = browser.new_page(
+                viewport={'width': RENDER_SIZE, 'height': RENDER_SIZE},
+                device_scale_factor=1
+            )
             page.set_content(html_content)
-            page.wait_for_timeout(100)
+            page.wait_for_timeout(200)  # Increased wait time for font loading
             page.screenshot(path=output_path, full_page=False)
             browser.close()
+
+        # Scale down from 2160 to 1080 for final output with high quality
+        from PIL import Image
+        img = Image.open(output_path)
+        img_resized = img.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
+        img_resized.save(output_path, 'PNG', optimize=True, quality=95)
 
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
             return True
