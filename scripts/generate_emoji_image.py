@@ -708,10 +708,17 @@ def main():
     essence = data.get('essence', {}) if isinstance(data.get('essence'), dict) else {}
     essence_emoji = essence.get('emoji') or (emoji_chars[0] if emoji_chars else '?')
 
-    print(f"[info] Emojis: {' '.join(emoji_chars)}")
     print(f"[info] Date: {date_str}")
     print(f"[info] Platform: {sys.platform}")
     print(f"[info] Post type: {post_type}")
+
+    if post_type == 'essence':
+        emotion_label = essence.get('emotion_label', 'unknown')
+        print(f"[info] Essence emoji: {essence_emoji}")
+        print(f"[info] Essence emotion: {emotion_label}")
+        print(f"[info] Source emojis analyzed: {' '.join(emoji_chars)}")
+    else:
+        print(f"[info] Emojis to render: {' '.join(emoji_chars)}")
 
     # Prepare output path
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -728,8 +735,12 @@ def main():
             filename_base = date_str
         output_path = os.path.join(OUTPUT_DIR, f"{filename_base}.png")
 
-    print(f"[info] Output: {output_path}")
-    print("[info] Generating image...")
+    print(f"[info] Output path: {output_path}")
+
+    if post_type == 'essence':
+        print("[info] Generating essence image (single large emoji)...")
+    else:
+        print("[info] Generating normal image (5 emojis grid)...")
 
     # Try rendering methods
     success = False
